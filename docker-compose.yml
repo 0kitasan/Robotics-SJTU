@@ -1,0 +1,44 @@
+# docker-compose.yml
+
+version: '3.8' # 使用较新的版本以支持GPU功能
+
+services:
+  # 服务名称，可以自定义，这里我们叫 ros-dev
+  ros-dev:
+    # 镜像
+    image: osrf/ros:noetic-desktop-full
+
+    # 容器名称
+    container_name: ros_noetic # 替换成你想要的名字
+
+    # 相当于 -dit，保持容器在后台运行并开启交互式终端
+    stdin_open: true  # -i
+    tty: true         # -t
+
+    # 工作目录，相当于 -w
+    working_dir: /home/kazusa # 替换成你的用户名
+
+    # 环境变量，相当于 -e
+    environment:
+      # - "NVIDIA_DRIVER_CAPABILITIES=all"
+      # $DISPLAY 会自动使用宿主机的环境变量值，这正是我们想要的
+      - "DISPLAY=${DISPLAY}"
+
+    # 挂载卷，相当于 -v
+    volumes:
+      - /dev:/dev
+      - /home/kazusa:/home/kazusa # 替换成你的用户名
+      - /tmp/.X11-unix:/tmp/.X11-unix
+
+    # # GPU 支持，相当于 --gpus all
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+    # 为了让GUI程序能连接到宿主机的X server，通常推荐使用host网络模式
+    # 这也使得 -e DISPLAY=unix$DISPLAY 中的 'unix' 不再严格需要
+    network_mode: "host"

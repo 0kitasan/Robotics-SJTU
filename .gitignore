@@ -1,0 +1,6 @@
+__pycache__/
+# 数据集
+dataset/
+
+.vscode/
+.idea/
