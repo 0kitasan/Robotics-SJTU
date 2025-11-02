@@ -6,6 +6,8 @@ AU3307
 
 `Dofbot_2025/`
 
+`conda activate Dofbot2025`
+
 ### RobotToolbox Python
 
 `dh_kine_student.py`
@@ -18,7 +20,10 @@ dofbot 机械臂末端位姿与关节角
 
 `dofbot_learn_student.py`
 
+需要先创建文件夹model_results/
+
 ## 实机实验
 
 `dofbot_ctrl/`
+
 

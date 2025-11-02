@@ -2,7 +2,7 @@ from dofbot import DofbotEnv
 import numpy as np
 import time
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     env = DofbotEnv()
     env.reset()
     Reward = False
@@ -18,7 +18,6 @@ if __name__ == '__main__':
         print(num_fk_data)
         # if num_fk_data == 100:
         #     env.set_target_pos(target_pos)
-
 
         if num_fk_data >= 10000:
             break

@@ -13,7 +13,8 @@ from utils_learn.utils_collect_visual import collect_dofbot_dataset, visualize_w
 from utils_learn.utils_model_test import ModelValidator
 import numpy as np
 import pandas as pd
-pi = 3.1415926          # 自己指定 π，方便后续打印保留 7 位小数
+
+pi = 3.1415926  # 自己指定 π，方便后续打印保留 7 位小数
 
 if __name__ == "__main__":
     # # --------------------------------------------------
@@ -22,9 +23,11 @@ if __name__ == "__main__":
     # # 可参考demo
     # ⚠️  10 个并行环境 × 50 k 条样本 ≈ 15 min（RTX-3060）
     #     若显存 < 8 G，建议 num_envs ≤ 6
-    raw_csv, norm_csv, stats_json = collect_dofbot_dataset(num_envs=12, num_samples=1200000, show_gui=False)
+    raw_csv, norm_csv, stats_json = collect_dofbot_dataset(
+        num_envs=12, num_samples=1200000, show_gui=False
+    )
     # 可视化仅用于快速验证可达空间是否异常（空洞、断层）
-    visualize_workspace(raw_csv = raw_csv)
+    visualize_workspace(raw_csv=raw_csv)
 
     # # --------------------------------------------------
     # # 仿真任务5、  正/逆运动学模型训练
