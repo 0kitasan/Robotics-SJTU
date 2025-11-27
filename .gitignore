@@ -2,6 +2,7 @@ __pycache__/
 # 数据集
 dataset/
 results/
+models/
 
 .vscode/
 .idea/

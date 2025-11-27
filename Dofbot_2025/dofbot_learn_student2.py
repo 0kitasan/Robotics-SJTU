@@ -37,13 +37,13 @@ if __name__ == "__main__":
     #     输入：6 关节角 → 输出：6 Dof 位姿（x,y,z,roll,pitch,yaw）
     #     隐藏层 [128,128,64] 经网格搜索，在 60 k 数据上验证误差
     # # 可参考demo
-    # data_path = norm_csv
-    # base_path = "dataset/20251029_201529"
-    # data_path = f"{base_path}/dofbot_fk_1200000_norm.csv"
-    # stats_path = f"{base_path}/dofbot_fk_1200000_norm_stats.json"
-    data_path = "dataset/60000/dofbot_fk_60000_norm.csv"
-    stats_path = "dataset/60000/dofbot_fk_60000_norm_stats.json"
-    fk_hidden_layers = [100, 30]
+    num_samples = 1200000
+    base_path = "dataset/20251029_201529"
+    data_path = f"{base_path}/dofbot_fk_{num_samples}_norm.csv"
+    stats_path = f"{base_path}/dofbot_fk_{num_samples}_norm_stats.json"
+    # data_path = "dataset/60000/dofbot_fk_60000_norm.csv"
+    # stats_path = "dataset/60000/dofbot_fk_60000_norm_stats.json"
+    fk_hidden_layers = [128, 128, 64]
     fk_lr = 0.1
     fk_epochs = 500
     fk_model, fk_dir, fk_path = train_dofbot_model(
@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
     # 5.2 逆运动学（IK）
     # # 可参考demo, 依赖 FK 用于监督训练
-    ik_hidden_layers = [100, 30]
+    ik_hidden_layers = [128, 128, 64]
     ik_lr = 0.1
     ik_epochs = 500
     ik_model, ik_dir, ik_path = train_dofbot_model(
@@ -163,13 +163,13 @@ if __name__ == "__main__":
     )
 
     # 6.1 生成 100 组随机关节角做正运动学模型验证
-    # rand_q = np.random.uniform(low=[0] * 5, high=[np.pi] * 5, size=(100, 5))
-    # fk_res = validator.validate_fk(rand_q)
-    # print("fk 平均位置误差: %.2f mm" % fk_res["err_dict"]["mean_err_mm"])
-    # print("fk 最大位置误差: %.2f mm" % fk_res["err_dict"]["max_err_mm"])
-    # validator.plot(
-    #     fk_res["err_dict"], save_path="results/model_results/error_analysis_fk.png"
-    # )
+    rand_q = np.random.uniform(low=[0] * 5, high=[np.pi] * 5, size=(100, 5))
+    fk_res = validator.validate_fk(rand_q)
+    print("fk 平均位置误差: %.2f mm" % fk_res["err_dict"]["mean_err_mm"])
+    print("fk 最大位置误差: %.2f mm" % fk_res["err_dict"]["max_err_mm"])
+    validator.plot(
+        fk_res["err_dict"], save_path="results/model_results/error_analysis_fk.png"
+    )
 
     # 2. 生成 100 组随机末端位姿做逆运动学模型验证
     tgt_pose = np.random.uniform([-0.2, -0.3, 0.1], [0.3, 0.3, 0.4], (100, 3))
