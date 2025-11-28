@@ -25,16 +25,16 @@ class ModelValidator:
 
     def __init__(
         self,
-        fk_model_path: str | Path,          # 正解模型
+        fk_model_path: str | Path,  # 正解模型
         ik_model_path: str | Path,  # 逆解模型（新增）
-        stats_path: str | Path,             # 归一化统计量
+        stats_path: str | Path,  # 归一化统计量
         input_keys_fk: List[str],
         output_keys_fk: List[str],
         input_keys_ik: List[str],
         output_keys_ik: List[str],
-        hidden_layers_fk: list[int]=[100, 30],
-        hidden_layers_ik: list[int]=[100, 30],
-        device: str = None
+        hidden_layers_fk: list[int] = [100, 30],
+        hidden_layers_ik: list[int] = [100, 30],
+        device: str = None,
     ):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.normalizer = Normalizer(stats_path)
@@ -100,9 +100,7 @@ class ModelValidator:
             q_sc = np.concatenate(q_arr, axis=1)
         with torch.no_grad():
             pred_norm = (
-                self.fk_model(torch.tensor(q_sc, device=self.device))
-                .cpu()
-                .numpy()
+                self.fk_model(torch.tensor(q_sc, device=self.device)).cpu().numpy()
             )  # (N,12)
 
         nn_list = [
@@ -118,9 +116,7 @@ class ModelValidator:
             time.sleep(0.02)  # 稳定一帧
             pos, orn, _ = self.env.get_dofbot_pose()
             R = Rotation.from_quat(orn).as_matrix()
-            pb_pose[i] = np.concatenate(
-                [pos, R[:, 0], R[:, 1], R[:, 2]]
-            )  # 3+9=12
+            pb_pose[i] = np.concatenate([pos, R[:, 0], R[:, 1], R[:, 2]])  # 3+9=12
 
         # ---- 3. 误差 ----
         err = np.abs(nn_pose - pb_pose)  # (N,12)
@@ -139,9 +135,7 @@ class ModelValidator:
         }
 
     # ================ 新增：IK 精度验证 ================
-    def validate_ik(
-        self, target_pose: np.ndarray, angle_deg: bool = True
-    ) -> Dict:
+    def validate_ik(self, target_pose: np.ndarray, angle_deg: bool = True) -> Dict:
         """
         输入：target_pose (N,12) —— 3 维位置 + 9 维旋转矩阵列向量
               angle_deg    —— 返回关节角是否转成 degree（默认 True）
@@ -161,15 +155,16 @@ class ModelValidator:
 
         # ---- 1. 归一化输入 ----
         tgt_norm = np.array(
-            [self.normalizer.normalize_cols(tgt[i], self.input_keys_ik) for i in range(N)]
+            [
+                self.normalizer.normalize_cols(tgt[i], self.input_keys_ik)
+                for i in range(N)
+            ]
         )  # (N,12)
 
         # ---- 2. 网络逆解 ----
         with torch.no_grad():
             q_pred = (
-                self.ik_model(torch.tensor(tgt_norm, device=self.device))
-                .cpu()
-                .numpy()
+                self.ik_model(torch.tensor(tgt_norm, device=self.device)).cpu().numpy()
             )  # (N,5)  输出在 [0,π]
         s = q_pred[:, 0::2]  # (N,5) sin
         c = q_pred[:, 1::2]  # (N,5) cos
@@ -182,9 +177,7 @@ class ModelValidator:
             time.sleep(0.02)
             pos, orn, _ = self.env.get_dofbot_pose()
             R = Rotation.from_quat(orn).as_matrix()
-            pb_pose[i] = np.concatenate(
-                [pos, R[:, 0], R[:, 1], R[:, 2]]
-            )  # 3+9=12
+            pb_pose[i] = np.concatenate([pos, R[:, 0], R[:, 1], R[:, 2]])  # 3+9=12
 
         # ---- 4. 误差 ----
         err = np.abs(tgt - pb_pose)
@@ -200,7 +193,6 @@ class ModelValidator:
             "pb_pose": pb_pose,
             "err": err,
         }
-
 
     # ------------------------------------------------------------------
     def plot(self, err_dict: Dict, save_path: str | Path = None):
@@ -234,21 +226,29 @@ if __name__ == "__main__":
     validator = ModelValidator(
         model_path="../results/learn_model/mlp_fk_20251017_105721/model.pt",
         stats_path="../dataset/1200000/dofbot_fk_1200000_norm_stats.json",
-        output_keys=['q1_sin','q1_cos','q2_sin','q2_cos','q3_sin','q3_cos','q4_sin','q4_cos','q5_sin','q5_cos'],
-        hidden_layers=[100, 30]
+        output_keys=[
+            "q1_sin",
+            "q1_cos",
+            "q2_sin",
+            "q2_cos",
+            "q3_sin",
+            "q3_cos",
+            "q4_sin",
+            "q4_cos",
+            "q5_sin",
+            "q5_cos",
+        ],
+        hidden_layers=[100, 30],
     )
 
     # 生成 100 组随机关节角做验证
-    rand_q = np.random.uniform(
-        low=[0] * 5, high=[np.pi] * 5, size=(100, 5)
-    )
+    rand_q = np.random.uniform(low=[0] * 5, high=[np.pi] * 5, size=(100, 5))
     res = validator.validate(rand_q)
     print("平均位置误差: %.2f mm" % res["err_dict"]["mean_pos_mm"])
     print("最大位置误差: %.2f mm" % res["err_dict"]["max_pos_mm"])
 
     validator.plot(res["err_dict"], save_path="error_analysis.png")
     validator.close()
-
 
     # ik_res = validator.validate_ik(tgt_pose, angle_deg=True)
     # print("IK 平均位置误差: %.2f mm" % ik_res["mean_err_mm"])

@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.distributions as D
 import torch.nn.functional as F
+from torch.utils.data import TensorDataset, DataLoader  # 新增
 
 
 # ---------- 工具函数 ----------
@@ -22,7 +23,7 @@ def split_data(data_df, in_cols, out_cols):
     return train_test_split(X, Y, test_size=0.2, random_state=42)
 
 
-def compute_fk_loss(y_pred, y_true, w_pos=0.9, w_ori=0.1):
+def compute_fk_loss(y_pred, y_true, w_pos=0.9, w_ori=0.1, compute_info=False):
     """
     FK 损失
     参数
@@ -37,29 +38,32 @@ def compute_fk_loss(y_pred, y_true, w_pos=0.9, w_ori=0.1):
     info : dict
     """
     # 1. 位置
-    loss_pos = F.mse_loss(y_pred[:, :3], y_true[:, :3])
+    # loss_pos = F.mse_loss(y_pred[:, :3], y_true[:, :3]) #好像没用到
 
     # 2. 旋转矩阵误差（Frobenius 距离）
     R_pred = y_pred[:, 3:]  # [B, 9]
     R_true = y_true[:, 3:]  # [B, 9]
-    loss_ori = F.mse_loss(R_pred, R_true)
+    # loss_ori = F.mse_loss(R_pred, R_true) #好像没用到
     # 3. 加权
     # loss = w_pos * loss_pos + w_ori * loss_ori
     # 4. 监控
-    with torch.no_grad():
-        mae = torch.mean(torch.abs(y_pred - y_true)).item()
-        rmse = torch.sqrt(torch.mean((y_pred - y_true) ** 2)).item()
-        pos_error = torch.norm(y_pred[:, :3] - y_true[:, :3], dim=1).mean().item()
-        ori_error = torch.norm(R_pred - R_true, dim=1).mean().item()
-
+    info = {}
     loss = F.mse_loss(y_pred, y_true)
-    loss = w_pos * loss_pos + w_ori * loss_ori
-    return loss, {
-        "mae": mae,
-        "rmse": rmse,
-        "position_error": pos_error,
-        "orientation_error": ori_error,
-    }
+    if compute_info:
+        with torch.no_grad():
+            mae = torch.mean(torch.abs(y_pred - y_true)).item()
+            rmse = torch.sqrt(torch.mean((y_pred - y_true) ** 2)).item()
+            pos_error = torch.norm(y_pred[:, :3] - y_true[:, :3], dim=1).mean().item()
+            ori_error = torch.norm(R_pred - R_true, dim=1).mean().item()
+
+            info = {
+                "mae": mae,
+                "rmse": rmse,
+                "position_error": pos_error,
+                "orientation_error": ori_error,
+            }
+
+    return loss, info
 
 
 def compute_ik_loss(q_pred, q_true, pose_true=None, fk_ref=None, w_pos=0.9, w_ori=0.1):
@@ -94,10 +98,10 @@ def compute_ik_loss(q_pred, q_true, pose_true=None, fk_ref=None, w_pos=0.9, w_or
     pred_mat = fk_ref(q_pred)  # [B,12]
 
     # 3.1 位置损失
-    loss_pos = F.mse_loss(pred_mat[:, :3], pose_true[:, :3])
+    # loss_pos = F.mse_loss(pred_mat[:, :3], pose_true[:, :3]) #好像没用到
 
     # 3.2 旋转矩阵损失（Frobenius）
-    loss_ori = F.mse_loss(pred_mat[:, 3:], pose_true[:, 3:])
+    # loss_ori = F.mse_loss(pred_mat[:, 3:], pose_true[:, 3:]) #好像没用到
     # # 3.3 加权总损失
     # loss = w_pos * loss_pos + w_ori * loss_ori
 
@@ -114,7 +118,7 @@ def compute_ik_loss(q_pred, q_true, pose_true=None, fk_ref=None, w_pos=0.9, w_or
         "position_error": pos_err,
         "orientation_error": ori_err,
     }
-    loss = w_pos * loss_pos + w_ori * loss_ori
+
     return loss, info
 
 
@@ -218,7 +222,7 @@ def train_dofbot_model(
             len(in_cols),
             hidden_layers=fk_hidden_layers,
             dropout=0.0,
-            activation="ReLU",
+            activation="SiLU",
             block_type="res",
             num_blocks=1,
         ).to(device)
@@ -247,7 +251,7 @@ def train_dofbot_model(
             y_train.shape[1],
             hidden_layers,
             dropout=0.0,  # 0.0% dropout
-            activation="ReLU",
+            activation="SiLU",  # ReLU
             block_type="res",
             num_blocks=1,
         ).to(
@@ -260,32 +264,57 @@ def train_dofbot_model(
         history = {"train": [], "test": [], "metric": "MSE"}
         best_test = np.inf
         patience = 0
+        train_ds = TensorDataset(X_train, y_train)
+        train_loader = DataLoader(
+            train_ds, batch_size=2048, shuffle=True, num_workers=0
+        )  # 使用 GPU 时似乎最好要设置num_workers=0
         for epoch in range(epochs):
             model.train()
-            opt.zero_grad()
-            y_pred = model(X_train)
-            # y_pred = torch.tensor(y_pred, dtype=torch.float32, device=device)
-            loss, info = (
-                compute_fk_loss(y_pred, y_train, w_pos=w_pos, w_ori=w_ori)
-                if mode == "fk"
-                else compute_ik_loss(
-                    y_pred,
-                    y_train,
-                    pose_true=X_train,
-                    fk_ref=fk_ref,
-                    w_pos=w_pos,
-                    w_ori=w_ori,
-                )
-            )
-            loss.backward()
-            opt.step()
+            epoch_loss_sum = 0.0  # 用于累加一个 epoch 内所有 batch 的 loss
+            num_batches = 0  # 计数器
+            # --- 内层循环：遍历每一个 Batch ---
+            for batch_x, batch_y in train_loader:
+                opt.zero_grad()
+                # 【关键修改】：这里只输入当前的一个 batch，而不是整个 X_train
+                y_pred = model(batch_x)
+                if mode == "fk":
+                    loss, info = compute_fk_loss(
+                        y_pred, batch_y, w_pos=w_pos, w_ori=w_ori
+                    )
+                else:
+                    # 【关键注意】：IK 模式下，loss 需要用到输入的位姿作为 pose_true
+                    # 所以这里传入的是 batch_x (当前的输入位姿)
+                    loss, info = compute_ik_loss(
+                        y_pred,
+                        batch_y,
+                        pose_true=batch_x,
+                        fk_ref=fk_ref,
+                        w_pos=w_pos,
+                        w_ori=w_ori,
+                    )
+                # print("开始计算反向传播")
+                loss.backward()
+                opt.step()
+                # print("完成计算反向传播")
+                # 累加 Loss 用于后续打印平均值
+                epoch_loss_sum += loss.item()
+                num_batches += 1
+            # --- 外层循环：Epoch 结束后的操作 ---
+            # print(f"开始外层循环{num_batches}")
             scheduler.step()  # 退火
-            history["train"].append(loss.item())
+            avg_train_loss = epoch_loss_sum / num_batches
+            history["train"].append(avg_train_loss)
 
             # 每 epoch 记录测试
             with torch.no_grad():
                 test_loss, test_info = (
-                    compute_fk_loss(model(X_test), y_test, w_pos=w_pos, w_ori=w_ori)
+                    compute_fk_loss(
+                        model(X_test),
+                        y_test,
+                        w_pos=w_pos,
+                        w_ori=w_ori,
+                        compute_info=True,
+                    )
                     if mode == "fk"
                     else compute_ik_loss(
                         model(X_test),

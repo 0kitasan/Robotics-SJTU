@@ -8,7 +8,7 @@
 #      pip install -r requirements_learn.txt
 # ==========================================
 # 模块化工具导入
-from utils_learn.utils_model_train_batch import train_dofbot_model
+from utils_learn.utils_model_train import train_dofbot_model
 from utils_learn.utils_collect_visual import collect_dofbot_dataset, visualize_workspace
 from utils_learn.utils_model_test import ModelValidator
 import numpy as np
@@ -16,6 +16,9 @@ import pandas as pd
 
 pi = 3.1415926  # 自己指定 π，方便后续打印保留 7 位小数
 
+NUM_SAMPLES = 300000
+HIDDEN_LAYERS = [256, 128, 128]  # [100, 30] [128, 128, 64]
+EPOCHS = 2000
 if __name__ == "__main__":
     # # --------------------------------------------------
     # # 仿真任务4、  数据采集与工作空间可视化
@@ -24,7 +27,7 @@ if __name__ == "__main__":
     # ⚠️  10 个并行环境 × 50 k 条样本 ≈ 15 min（RTX-3060）
     #     若显存 < 8 G，建议 num_envs ≤ 6
     # raw_csv, norm_csv, stats_json = collect_dofbot_dataset(
-    #     num_envs=12, num_samples=1200000, show_gui=False
+    #     num_envs=12, num_samples=NUM_SAMPLES, show_gui=False
     # )
     # # 可视化仅用于快速验证可达空间是否异常（空洞、断层）
     # visualize_workspace(raw_csv=raw_csv)
@@ -37,15 +40,14 @@ if __name__ == "__main__":
     #     输入：6 关节角 → 输出：6 Dof 位姿（x,y,z,roll,pitch,yaw）
     #     隐藏层 [128,128,64] 经网格搜索，在 60 k 数据上验证误差
     # # 可参考demo
-    num_samples = 120000
-    base_path = "dataset/120000"  # 20251029_201529
-    data_path = f"{base_path}/dofbot_fk_{num_samples}_norm.csv"
-    stats_path = f"{base_path}/dofbot_fk_{num_samples}_norm_stats.json"
-    # data_path = "dataset/60000/dofbot_fk_60000_norm.csv"
-    # stats_path = "dataset/60000/dofbot_fk_60000_norm_stats.json"
-    fk_hidden_layers = [256, 256, 128]
+    # data_path = norm_csv
+    base_path = "dataset/20251128_202648"
+    data_path = f"{base_path}/dofbot_fk_{NUM_SAMPLES}_norm.csv"
+    stats_path = f"{base_path}/dofbot_fk_{NUM_SAMPLES}_norm_stats.json"
+
+    fk_hidden_layers = HIDDEN_LAYERS
     fk_lr = 0.1
-    fk_epochs = 500
+    fk_epochs = EPOCHS
     fk_model, fk_dir, fk_path = train_dofbot_model(
         data_path=data_path,
         model_type="mlp",
@@ -71,40 +73,40 @@ if __name__ == "__main__":
 
     # 5.2 逆运动学（IK）
     # # 可参考demo, 依赖 FK 用于监督训练
-    ik_hidden_layers = [256, 256, 128]
+    ik_hidden_layers = HIDDEN_LAYERS
     ik_lr = 0.1
-    ik_epochs = 500
-    ik_model, ik_dir, ik_path = train_dofbot_model(
-        data_path=data_path,
-        model_type="mlp",
-        mode="ik",
-        in_cols=["x", "y", "z", "nx", "ny", "nz", "ox", "oy", "oz", "ax", "ay", "az"],
-        out_cols=[
-            "q1_sin",
-            "q1_cos",
-            "q2_sin",
-            "q2_cos",
-            "q3_sin",
-            "q3_cos",
-            "q4_sin",
-            "q4_cos",
-            "q5_sin",
-            "q5_cos",
-        ],
-        epochs=ik_epochs,
-        lr=ik_lr,
-        min_lr=1e-5,
-        hidden_layers=ik_hidden_layers,
-        fk_path=fk_path,
-        fk_hidden_layers=fk_hidden_layers,
-    )
+    ik_epochs = EPOCHS
+    # ik_model, ik_dir, ik_path = train_dofbot_model(
+    #     data_path=data_path,
+    #     model_type="mlp",
+    #     mode="ik",
+    #     in_cols=["x", "y", "z", "nx", "ny", "nz", "ox", "oy", "oz", "ax", "ay", "az"],
+    #     out_cols=[
+    #         "q1_sin",
+    #         "q1_cos",
+    #         "q2_sin",
+    #         "q2_cos",
+    #         "q3_sin",
+    #         "q3_cos",
+    #         "q4_sin",
+    #         "q4_cos",
+    #         "q5_sin",
+    #         "q5_cos",
+    #     ],
+    #     epochs=ik_epochs,
+    #     lr=ik_lr,
+    #     min_lr=1e-5,
+    #     hidden_layers=ik_hidden_layers,
+    #     fk_path=fk_path,
+    #     fk_hidden_layers=fk_hidden_layers,
+    # )
 
     # # --------------------------------------------------
     # # 仿真任务6、  验证训练得到的正逆运动学模型预测结果，分析误差原因
     # # # 可参考demo
     validator = ModelValidator(
         fk_model_path=fk_path,
-        ik_model_path=ik_path,
+        # ik_model_path=ik_path,
         stats_path=stats_path,
         input_keys_fk=[
             "q1_sin",
@@ -172,14 +174,14 @@ if __name__ == "__main__":
     )
 
     # 2. 生成 100 组随机末端位姿做逆运动学模型验证
-    tgt_pose = np.random.uniform([-0.2, -0.3, 0.1], [0.3, 0.3, 0.4], (100, 3))
-    I9 = np.tile(np.eye(3).ravel(), (100, 1))
-    tgt_pose = np.hstack([tgt_pose, I9])
-    ik_res = validator.validate_ik(tgt_pose)
-    print("iK 平均位置误差: %.2f mm" % ik_res["err_dict"]["mean_err_mm"])
-    print("ik 最大位置误差: %.2f mm" % ik_res["err_dict"]["max_err_mm"])
-    validator.plot(
-        ik_res["err_dict"], save_path="results/model_results/error_analysis_ik.png"
-    )
+    # tgt_pose = np.random.uniform([-0.2, -0.3, 0.1], [0.3, 0.3, 0.4], (100, 3))
+    # I9 = np.tile(np.eye(3).ravel(), (100, 1))
+    # tgt_pose = np.hstack([tgt_pose, I9])
+    # ik_res = validator.validate_ik(tgt_pose)
+    # print("iK 平均位置误差: %.2f mm" % ik_res["err_dict"]["mean_err_mm"])
+    # print("ik 最大位置误差: %.2f mm" % ik_res["err_dict"]["max_err_mm"])
+    # validator.plot(
+    #     ik_res["err_dict"], save_path="results/model_results/error_analysis_ik.png"
+    # )
 
     validator.close()
